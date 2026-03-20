@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 
+
 # Создаем общие настройки, которые берутся из .env
 class Settings(BaseSettings):
     DB_HOST: str
@@ -11,6 +12,11 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self):
         return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+
+    SECRET_KEY: str
+    ALGORITHM: str
+
+    BOT_TOKEN: str
 
     class Config:
         env_file = ".env"
