@@ -38,18 +38,28 @@ async def add_digest(
     await session.commit()
     await session.refresh(digest)
 
+    request_data = data.model_dump()
+    # Преобразуем даты в строки
+    request_data['date_from'] = request_data['date_from'].isoformat()
+    request_data['date_to'] = request_data['date_to'].isoformat()
+
     task = generate_digest.delay(
         user_id=str(user.id),
         digest_id=str(digest.id),
-        request_data=data.model_dump()
+        request_data=request_data
     )
 
     return {"digest_id": digest.id, "task_id": task.id}
 
 
 @router.get("/")
-async def get_digest_list():
-    pass
+async def get_digest_list(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+) -> list[SDigest]:
+    digest_dao = DigestDAO(session)
+    digests = await digest_dao.get_all(user_id=user.id)
+    return [SDigest.model_validate(d) for d in digests]
 
 
 @router.get("/{digest_id}")

@@ -7,13 +7,13 @@ from typing import List, Optional, Literal
 class SDigest(BaseModel):
     id: UUID
     user_id: UUID
-    title: str
-    summary_text: str
-    filter_query: str
+    title: Optional[str] = None
+    summary_text: Optional[str] = None
+    filter_query: Optional[str] = None
     date_from: date
     date_to: date
     cluster_count: int
-    audio_path: str
+    audio_path: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

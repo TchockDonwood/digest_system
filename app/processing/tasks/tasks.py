@@ -7,14 +7,6 @@ from datetime import datetime
 from typing import Dict, Any, List
 from celery import chain
 from app.processing.tasks.celery_app import celery_app
-from app.processing.services.telegram_collector import TelegramCollector
-from app.processing.services.embedding_service import EmbeddingService
-from app.processing.services.clustering_service import ClusteringService
-from app.processing.services.summarization_service import SummarizationService
-from app.processing.services.tts_service import TTSService
-from app.processing.models.qwen_embedder import QwenEmbedder
-from app.processing.models.summarizer import SaigaSummarizer
-from app.processing.models.tts import SileroTTS
 from app.config import settings
 from app.database.models.digest import Digest
 from app.database.models.query_history import QueryHistory
@@ -26,38 +18,74 @@ from app.database.models.cluster import Cluster
 from app.database.models.embedding import Embedding
 from app.database.database import async_session_maker
 from sqlalchemy import select
-from app.processing.utils.filtering import set_embedder, get_ad_embedding, filter_ad_by_embeddings
 
 logger = logging.getLogger(__name__)
 
-# Инициализация сервисов (один раз при старте воркера)
-collector = TelegramCollector(
-    api_id=settings.API_ID,
-    api_hash=settings.API_HASH,
-    phone=settings.PHONE_NUMBER
-)
-embedder = QwenEmbedder(
-    model_name="Qwen/Qwen3-Embedding-4B",
-    device="cuda",  # или "cpu" если нет GPU
-    embedding_dim=4096
-)
-set_embedder(embedder)
-get_ad_embedding()  # прогреваем кэш
+# Глобальные переменные для ленивой загрузки
+_collector = None
+_embedder = None
+_summarizer = None
+_tts_engine = None
+_embedding_service = None
+_clustering_service = None
+_summarization_service = None
+_tts_service = None
 
-summarizer = SaigaSummarizer(
-    model_name=settings.SAIGA_MODEL,
-    host=settings.OLLAMA_HOST
-)
-tts_engine = SileroTTS(speaker='xenia')
-
-embedding_service = EmbeddingService(embedder)
-clustering_service = ClusteringService()
-summarization_service = SummarizationService(summarizer)
-tts_service = TTSService(tts_engine)
+def _init_services():
+    """Ленивая инициализация сервисов (загружаются только при первом вызове)"""
+    global _collector, _embedder, _summarizer, _tts_engine
+    global _embedding_service, _clustering_service, _summarization_service, _tts_service
+    
+    if _collector is not None:
+        return
+    
+    logger.info("🚀 Инициализация сервисов...")
+    
+    from app.processing.services.telegram_collector import TelegramCollector
+    from app.processing.models.qwen_embedder import QwenEmbedder
+    from app.processing.models.summarizer import SaigaSummarizer
+    from app.processing.models.tts import SileroTTS
+    from app.processing.services.embedding_service import EmbeddingService
+    from app.processing.services.clustering_service import ClusteringService
+    from app.processing.services.summarization_service import SummarizationService
+    from app.processing.services.tts_service import TTSService
+    from app.processing.utils.filtering import set_embedder, get_ad_embedding
+    
+    _collector = TelegramCollector(
+        api_id=settings.API_ID,
+        api_hash=settings.API_HASH,
+        phone=settings.PHONE_NUMBER
+    )
+    
+    _embedder = QwenEmbedder(
+        model_name="Qwen/Qwen3-Embedding-0.6B",
+        device="cuda",          # используем CPU для экономии памяти
+        embedding_dim=1024
+    )
+    
+    set_embedder(_embedder)
+    get_ad_embedding()
+    
+    _summarizer = SaigaSummarizer(
+        model_name=settings.SAIGA_MODEL,
+        host=settings.OLLAMA_HOST
+    )
+    
+    _tts_engine = SileroTTS(speaker='xenia')
+    
+    _embedding_service = EmbeddingService(_embedder)
+    _clustering_service = ClusteringService()
+    _summarization_service = SummarizationService(_summarizer)
+    _tts_service = TTSService(_tts_engine)
+    
+    logger.info("✅ Сервисы инициализированы")
 
 
 @celery_app.task(bind=True)
 def generate_digest(self, user_id: str, digest_id: str, request_data: Dict[str, Any]):
+    """Задача на создание дайджеста"""
+    _init_services()  # инициализируем сервисы при первом вызове
+    
     loop = asyncio.get_event_loop()
     try:
         result = loop.run_until_complete(
@@ -78,21 +106,34 @@ async def _generate_digest_async(
     digest_id: uuid.UUID,
     request_data: Dict[str, Any]
 ):
+    global _collector, _embedder, _embedding_service, _clustering_service
+    global _summarization_service, _tts_service
+    
+    logger.info(f"🚀 Начало обработки дайджеста {digest_id} для пользователя {user_id}")
+    logger.info(f"📋 Параметры: каналы={request_data['channels']}, "
+                f"даты={request_data['date_from']}..{request_data['date_to']}, "
+                f"кластеров={request_data['n_clusters']}, "
+                f"формат={request_data['output_format']}")
+    
     # 1. Получаем каналы из БД
     async with async_session_maker() as session:
         stmt = select(TelegramChannel).where(
-            TelegramChannel.username.in_(request_data['channels'])   # username = ссылка
+            TelegramChannel.username.in_(request_data['channels'])
         )
         result = await session.execute(stmt)
         channels = result.scalars().all()
+        logger.info(f"📡 Найдено активных каналов: {len(channels)}")
         if not channels:
-            logger.info(f"No active channels for digest {digest_id}")
+            logger.warning(f"⚠️ Нет активных каналов для дайджеста {digest_id}")
             return {"digest_id": str(digest_id), "status": "no_active_channels"}
 
     # 2. Сбор новостей
     date_from = datetime.fromisoformat(request_data['date_from'])
-    news_items = await collector.collect_news_for_channels(channels, date_from)
+    logger.info(f"🕒 Начинаем сбор новостей с {date_from}")
+    news_items = await _collector.collect_news_for_channels(channels, date_from)
+    logger.info(f"📰 Собрано новостей: {len(news_items)}")
     if not news_items:
+        logger.warning(f"⚠️ Новостей не найдено для дайджеста {digest_id}")
         return {"digest_id": str(digest_id), "status": "no_news"}
 
     news_ids = [n.id for n in news_items]
@@ -103,79 +144,97 @@ async def _generate_digest_async(
         stmt = select(Embedding.news_id, Embedding.vector).where(Embedding.news_id.in_(news_ids))
         rows = await session.execute(stmt)
         existing_embeddings = {row.news_id: np.array(row.vector) for row in rows}
+        logger.info(f"🧠 Уже есть эмбеддинги для {len(existing_embeddings)} новостей")
 
     # 4. Генерируем эмбеддинги для новых новостей
     missing_indices = [i for i, nid in enumerate(news_ids) if nid not in existing_embeddings]
     if missing_indices:
         missing_texts = [texts[i] for i in missing_indices]
         missing_ids = [news_ids[i] for i in missing_indices]
-        logger.info(f"Генерация эмбеддингов для {len(missing_ids)} новых новостей")
-        new_vectors = embedder.get_batch_embeddings(missing_texts)
-        await embedding_service.save_embeddings(missing_ids, new_vectors)
+        logger.info(f"🔄 Генерация эмбеддингов для {len(missing_ids)} новых новостей")
+        new_vectors = _embedder.get_batch_embeddings(missing_texts)
+        await _embedding_service.save_embeddings(missing_ids, new_vectors)
         for nid, vec in zip(missing_ids, new_vectors):
             existing_embeddings[nid] = vec
 
-    # 5. Собираем матрицу эмбеддингов в порядке news_ids
+    # 5. Собираем матрицу эмбеддингов
     vectors = np.array([existing_embeddings[nid] for nid in news_ids])
+    logger.info(f"📊 Матрица эмбеддингов: {vectors.shape}")
 
     # 6. Семантическое удаление рекламы
+    from app.processing.utils.filtering import filter_ad_by_embeddings
     ad_mask = filter_ad_by_embeddings(vectors, threshold=0.6)
     keep_indices = np.where(~ad_mask)[0]
-
-    if len(keep_indices) < len(news_ids):
-        logger.info(f"Удалено рекламы: {len(news_ids) - len(keep_indices)}")
+    removed_count = len(news_ids) - len(keep_indices)
+    if removed_count > 0:
+        logger.info(f"🚫 Удалено рекламы: {removed_count} новостей")
 
     news_items = [news_items[i] for i in keep_indices]
     vectors = vectors[keep_indices]
     news_ids = [news_ids[i] for i in keep_indices]
 
     if not news_ids:
+        logger.warning(f"⚠️ После фильтрации рекламы новостей не осталось")
         return {"digest_id": str(digest_id), "status": "no_news_after_ad_filter"}
 
-    # 7. Фильтрация по запросу (если указан)
+    # 7. Фильтрация по запросу
     if request_data.get('filter_query'):
         filter_query = request_data['filter_query']
-        query_emb = embedder.get_batch_embeddings([filter_query])[0]
+        logger.info(f"🎯 Применяем семантический фильтр: '{filter_query}'")
+        query_emb = _embedder.get_batch_embeddings([filter_query])[0]
         similarities = np.dot(vectors, query_emb)
         query_mask = similarities >= 0.28
         keep_indices = np.where(query_mask)[0]
-
-        if len(keep_indices) < len(news_ids):
-            logger.info(f"Не прошли фильтр по запросу: {len(news_ids) - len(keep_indices)}")
+        removed_by_query = len(news_ids) - len(keep_indices)
+        if removed_by_query > 0:
+            logger.info(f"🔍 Отсеяно по запросу: {removed_by_query} новостей")
 
         news_items = [news_items[i] for i in keep_indices]
         vectors = vectors[keep_indices]
         news_ids = [news_ids[i] for i in keep_indices]
 
         if not news_ids:
+            logger.warning(f"⚠️ После фильтрации по запросу новостей не осталось")
             return {"digest_id": str(digest_id), "status": "no_news_after_semantic_filter"}
 
     # 8. Кластеризация
     n_clusters = min(request_data['n_clusters'], len(news_ids))
-    if n_clusters == 0:
-        return {"digest_id": str(digest_id), "status": "no_news_for_clustering"}
-    clusters = await clustering_service.perform_clustering(digest_id, news_ids, n_clusters)
+    logger.info(f"🔢 Кластеризация {len(news_ids)} новостей на {n_clusters} кластеров")
+    clusters = await _clustering_service.perform_clustering(digest_id, news_ids, n_clusters)
     if not clusters:
+        logger.error(f"❌ Ошибка кластеризации для дайджеста {digest_id}")
         return {"digest_id": str(digest_id), "status": "clustering_failed"}
+    logger.info(f"✅ Создано кластеров: {len(clusters)}")
 
     # 9. Суммаризация кластеров
-    await summarization_service.summarize_clusters(digest_id)
+    logger.info(f"📝 Запуск суммаризации кластеров...")
+    await _summarization_service.summarize_clusters(digest_id)
+    logger.info(f"✅ Суммаризация завершена")
 
     # 10. Сборка текста дайджеста
     digest_text = await build_digest_text(digest_id)
     await update_digest_text(digest_id, digest_text)
+    logger.info(f"📄 Текст дайджеста сформирован (длина {len(digest_text)} символов)")
 
-    # 11. Генерация аудио (если нужно)
+    # 11. Генерация аудио
     audio_path = None
     if request_data['output_format'] == 'audio' and digest_text:
-        audio_path = await tts_service.generate_audio(digest_id, digest_text)
+        logger.info(f"🔊 Генерация аудио для дайджеста {digest_id}")
+        audio_path = await _tts_service.generate_audio(digest_id, digest_text)
+        if audio_path:
+            logger.info(f"🎵 Аудио сохранено: {audio_path}")
+        else:
+            logger.warning(f"⚠️ Не удалось сгенерировать аудио")
 
     # 12. Списание токенов
     await deduct_tokens(user_id, 1, f"Дайджест {digest_id}")
+    logger.info(f"💰 Списано 1 токен у пользователя {user_id}")
 
     # 13. Сохранение в историю
     await save_query_history(user_id, digest_id, request_data)
+    logger.info(f"📜 История запроса сохранена")
 
+    logger.info(f"🎉 Дайджест {digest_id} успешно обработан")
     return {
         "digest_id": str(digest_id),
         "status": "completed",
@@ -183,7 +242,6 @@ async def _generate_digest_async(
     }
 
 
-# Вспомогательные функции (работают с БД)
 async def build_digest_text(digest_id: uuid.UUID) -> str:
     async with async_session_maker() as session:
         stmt = select(Cluster).where(Cluster.digest_id == digest_id)
