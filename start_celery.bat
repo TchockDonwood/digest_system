@@ -1,0 +1,1 @@
+celery -A app.processing.tasks.celery_app worker --loglevel=info --pool=solo
