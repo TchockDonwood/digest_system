@@ -1,10 +1,9 @@
-# services/clustering_service.py
 import uuid
 from typing import List
 import numpy as np
 from sklearn.cluster import KMeans
 import umap
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
 from app.database.models.cluster import Cluster
 from app.database.models.cluster_news import ClusterNews
@@ -35,6 +34,11 @@ class ClusteringService:
             reducer = umap.UMAP(random_state=42)
             X_proj = reducer.fit_transform(X)
 
+            # Удаляем старые проекции для этих новостей (если есть)
+            if valid_news_ids:
+                stmt_delete = delete(EmbeddingProjection).where(EmbeddingProjection.news_id.in_(valid_news_ids))
+                await session.execute(stmt_delete)
+
             clusters_map = {}
             for label in set(labels):
                 cluster = Cluster(digest_id=digest_id)
@@ -57,4 +61,3 @@ class ClusteringService:
 
             await session.commit()
             return list(clusters_map.values())
-        

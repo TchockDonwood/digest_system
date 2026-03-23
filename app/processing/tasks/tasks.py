@@ -127,15 +127,31 @@ async def _generate_digest_async(
             logger.warning(f"⚠️ Нет активных каналов для дайджеста {digest_id}")
             return {"digest_id": str(digest_id), "status": "no_active_channels"}
 
-    # 2. Сбор новостей
+    # 2. Сбор новостей (парсинг + загрузка всех из БД)
     date_from = datetime.fromisoformat(request_data['date_from'])
-    logger.info(f"🕒 Начинаем сбор новостей с {date_from}")
-    news_items = await _collector.collect_news_for_channels(channels, date_from)
-    logger.info(f"📰 Собрано новостей: {len(news_items)}")
+    date_to = datetime.fromisoformat(request_data['date_to'])
+    logger.info(f"🕒 Начинаем сбор новостей с {date_from} по {date_to}")
+
+    # Сначала парсим и сохраняем новые сообщения (если есть)
+    await _collector.collect_news_for_channels(channels, date_from)
+
+    # Теперь загружаем все сообщения за период из БД
+    async with async_session_maker() as session:
+        stmt = (
+            select(News)
+            .where(News.channel_id.in_([c.id for c in channels]))
+            .where(News.published_at >= date_from)
+            .where(News.published_at <= date_to)
+        )
+        result = await session.execute(stmt)
+        news_items = result.scalars().all()
+        logger.info(f"📰 Всего новостей за период: {len(news_items)}")
+
     if not news_items:
         logger.warning(f"⚠️ Новостей не найдено для дайджеста {digest_id}")
         return {"digest_id": str(digest_id), "status": "no_news"}
 
+    # Дальше идёт существующий код (извлечение id, текстов, эмбеддинги, кластеризация...)
     news_ids = [n.id for n in news_items]
     texts = [n.text for n in news_items]
 
@@ -146,7 +162,7 @@ async def _generate_digest_async(
         existing_embeddings = {row.news_id: np.array(row.vector) for row in rows}
         logger.info(f"🧠 Уже есть эмбеддинги для {len(existing_embeddings)} новостей")
 
-    # 4. Генерируем эмбеддинги для новых новостей
+    # 4. Генерируем эмбеддинги для новых новостей (тех, у которых ещё нет)
     missing_indices = [i for i, nid in enumerate(news_ids) if nid not in existing_embeddings]
     if missing_indices:
         missing_texts = [texts[i] for i in missing_indices]
