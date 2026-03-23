@@ -1,4 +1,3 @@
-# services/clustering_service.py
 import uuid
 from typing import List
 import numpy as np
