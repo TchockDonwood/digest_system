@@ -199,7 +199,7 @@ async def _generate_digest_async(
         logger.info(f"🎯 Применяем семантический фильтр: '{filter_query}'")
         query_emb = _embedder.get_batch_embeddings([filter_query])[0]
         similarities = np.dot(vectors, query_emb)
-        query_mask = similarities >= 0.28
+        query_mask = similarities >= 0.315
         keep_indices = np.where(query_mask)[0]
         removed_by_query = len(news_ids) - len(keep_indices)
         if removed_by_query > 0:
