@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard</title>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+
+<h1>📊 Admin Dashboard</h1>
+
+<!-- Фильтры -->
+<div>
+    <label>From:</label>
+    <input type="date" id="dateFrom">
+
+    <label>To:</label>
+    <input type="date" id="dateTo">
+
+    <button onclick="loadData()">Обновить</button>
+</div>
+
+<hr>
+
+<h2>📈 User Activity</h2>
+<canvas id="activityChart"></canvas>
+
+<h2>👤 Registrations</h2>
+<canvas id="registrationsChart"></canvas>
+
+<h2>⚙️ System Metrics</h2>
+
+<h3>Total Requests</h3>
+<canvas id="metricsRequests"></canvas>
+
+<h3>Avg Response Time</h3>
+<canvas id="metricsLatency"></canvas>
+
+<!-- JS -->
+<script src="/static/js/dashboard.js"></script>
+
+</body>
+</html>

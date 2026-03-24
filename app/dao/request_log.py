@@ -29,4 +29,4 @@ class RequestLogDAO(BaseDAO):
         ).group_by("period").order_by("period")
 
         result = await self.session.execute(stmt)
-        return result.all()
+        return result.mappings().all()

@@ -1,5 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from app.api.middleware.logging import log_requests_middleware
 from app.api.routers.auth_router import router as auth_router
 from app.api.routers.user_router import router as user_router
 from app.api.routers.admin_router import router as admin_router
@@ -28,6 +31,8 @@ app.add_middleware(
 # Добавляем middlewares
 #app.middleware("http")(log_requests_middleware)
 
+
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Подключаем все роутеры
 app.include_router(auth_router)

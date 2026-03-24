@@ -24,7 +24,7 @@ class QueryHistoryDAO(BaseDAO):
         stmt = select(
             date_trunc.label("period"),
             QueryHistory.user_id,
-            func.count().label("requests_count")
+            func.count().label("value")
         ).where(
             QueryHistory.created_at.between(date_from, date_to)
         )
@@ -36,4 +36,4 @@ class QueryHistoryDAO(BaseDAO):
 
         result = await self.session.execute(stmt)
         
-        return result.all()
+        return result.mappings().all()
