@@ -21,7 +21,7 @@ async def telegram_login(
 ):
     payload = data.model_dump()
 
-    if not verify_telegram_auth(payload, settings.BOT_TOKEN):
+    if not verify_telegram_auth(payload, settings.WIDGET_BOT_TOKEN_ACTUAL):
         raise InvalidTelegramAuthorizationException()
 
     if not validate_auth_date(int(payload["auth_date"])):

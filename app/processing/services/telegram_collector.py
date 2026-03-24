@@ -6,11 +6,14 @@ from telethon.errors import FloodWaitError, ChannelPrivateError
 from telethon.sessions import StringSession
 from sqlalchemy import select
 import redis.asyncio as redis
+import logging
 
 from app.database.models.channel import TelegramChannel
 from app.database.models.news import News
 from app.database.database import async_session_maker
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 class TelegramCollector:
     def __init__(self, api_id: int, api_hash: str, phone: str):
@@ -65,9 +68,9 @@ class TelegramCollector:
             if not session_string:
                 new_session_string = self.client.session.save()
                 await redis_client.set(session_key, new_session_string)
-                print("✅ Сессия сохранена в Redis")
+                logger.info("✅ Сессия сохранена в Redis")
 
-            print("✅ TelegramCollector: клиент подключён")
+            logger.info("✅ TelegramCollector: клиент подключён")
 
     async def get_entity(self, link: str):
         await self._ensure_client()
@@ -101,18 +104,18 @@ class TelegramCollector:
                                 newly_saved.append(news_item)
                         await asyncio.sleep(0.05)
                     await session.commit()
-                    print(f"Канал {channel.username}: загружено {len([n for n in newly_saved if n.channel_id == channel.id])} новых сообщений")
+                    logger.info(f"Канал {channel.username}: загружено {len([n for n in newly_saved if n.channel_id == channel.id])} новых сообщений")
                     if idx < len(channels) - 1:
                         await asyncio.sleep(2)
                 except ChannelPrivateError:
-                    print(f"❌ Канал {channel.username} закрыт. Помечаем как неактивный.")
+                    logger.error(f"❌ Канал {channel.username} закрыт. Помечаем как неактивный.")
                     channel.is_active = False
                     await session.commit()
                 except FloodWaitError as e:
-                    print(f"⚠️ Ожидание {e.seconds} сек...")
+                    logger.info(f"⚠️ Ожидание {e.seconds} сек...")
                     await asyncio.sleep(e.seconds)
                 except Exception as e:
-                    print(f"❌ Ошибка при обработке {channel.username}: {e}")
+                    logger.error(f"❌ Ошибка при обработке {channel.username}: {e}")
 
         # Получаем все новости за период из БД
         all_news = []
@@ -124,7 +127,8 @@ class TelegramCollector:
                 )
                 result = await session.execute(stmt)
                 all_news.extend(result.scalars().all())
-        print(f"Всего загружено новых новостей: {len(newly_saved)}, всего в БД за период: {len(all_news)}")
+        logger.info(f"Всего загружено новых новостей: {len(newly_saved)}, всего в БД за период: {len(all_news)}")
+        logger.info(f"📰 Всего новостей за период: {len(all_news)}")
         return all_news
 
     async def disconnect(self):

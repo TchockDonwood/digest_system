@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     BOT_TOKEN: str
+    WIDGET_BOT_TOKEN: str | None = None
+    WIDGET_BOT_USERNAME: str = "ru_news_manager_bot"
 
     API_ID: int
     API_HASH: str
@@ -22,6 +24,10 @@ class Settings(BaseSettings):
     SAIGA_MODEL: str
 
     AUDIO_STORAGE_PATH: str
+
+    @property
+    def WIDGET_BOT_TOKEN_ACTUAL(self) -> str:
+        return self.WIDGET_BOT_TOKEN or self.BOT_TOKEN
 
     @property
     def REDIS_URL(self):

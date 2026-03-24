@@ -100,5 +100,4 @@ class ClusteringService:
                 session.add(proj)
 
             await session.commit()
-            logger.info(f"Создано кластеров: {len(clusters_map)}")
             return list(clusters_map.values())
