@@ -46,7 +46,7 @@ def remove_channels(channels: list, selected_ids: list[uuid.UUID]) -> InlineKeyb
 
     for channel in channels:
         marker = "🗑 " if channel.id in selected_ids else ""
-        text = f"{marker}{channel.name} (@{channel.username})"
+        text = f"{marker}{channel.name} ({channel.username})"
 
         builder.button(
             text=text,

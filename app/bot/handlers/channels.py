@@ -18,7 +18,7 @@ router = Router()
 @router.callback_query(F.data == "menu_channels")
 async def show_channels(callback: CallbackQuery, session: AsyncSession, user: User):
     user_channel_dao = UserTelegramChannelDAO(session)
-    channels = [f"{channel.name} (@{channel.username})" for channel in await user_channel_dao.get_user_channels(user_id=user.id)]
+    channels = [f"{channel.name} ({channel.username})" for channel in await user_channel_dao.get_user_channels(user_id=user.id)]
     text = "Каналов не найдено." if not channels else "\n".join(channels)
     await callback.message.answer(text, reply_markup=channels_menu())
     await callback.answer()
@@ -91,7 +91,7 @@ async def process_channel_url(message: Message, state: FSMContext, session: Asyn
 
     # Получаем ТОЛЬКО каналы пользователя
     user_channels = await user_channel_dao.get_user_channels(user.id)
-    channels_list = [f"{channel.name} (@{channel.username})" for channel in user_channels]
+    channels_list = [f"{channel.name} ({channel.username})" for channel in user_channels]
 
     # Формируем ответ
     response = "\n".join(channels_list + results) if results else "\n".join(channels_list)
