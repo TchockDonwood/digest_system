@@ -90,9 +90,10 @@ def add_to_favorites(digest_id: uuid.UUID) -> InlineKeyboardMarkup:
 def admin_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="🪙 Поменять кол-во токенов", callback_data="tokens_change")
+    builder.button(text="👥 Все пользователи", callback_data="all_users")
     builder.button(text="📊 Посмотреть график регистраций", callback_data="log_in_chart")
     builder.button(text="📊 Посмотреть график активности", callback_data="activity_chart")
     builder.button(text="📊 Посмотреть метрики", callback_data="metrics_chart")
     builder.button(text="⬅️ В меню", callback_data="menu_main")
-    builder.adjust(2, 2, 1)
+    builder.adjust(2, 2, 1, 1)
     return builder.as_markup(resize_keyboard=True)
