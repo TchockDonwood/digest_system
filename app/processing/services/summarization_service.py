@@ -27,8 +27,11 @@ class SummarizationService:
                     continue
 
                 texts = [n.text for n in news_list]
-                cluster.title = await self.summarizer.generate_title(texts)
-                cluster.summary_text = await self.summarizer.summarize_cluster(texts, max_sentences=3)
+                total_chars = sum(len(t) for t in texts)
+                # Ограничиваем суммаризацию половиной объёма, но не более 4000 символов (лимит Telegram)
+                max_summary_chars = min(total_chars // 2, 4000)
+                # Заголовок — максимум 100 символов
+                cluster.title = await self.summarizer.generate_title(texts, max_length=100)
+                cluster.summary_text = await self.summarizer.summarize_cluster(texts, max_sentences=3, max_length=max_summary_chars)
 
             await session.commit()
-            

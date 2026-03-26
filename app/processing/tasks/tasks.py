@@ -4,7 +4,7 @@ import json
 import logging
 import numpy as np
 from aiogram import Bot
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from app.config import settings
 from datetime import datetime
 from typing import Dict, Any, List
@@ -134,6 +134,7 @@ async def _generate_digest_async(
         if not channels:
             logger.warning(f"⚠️ Нет активных каналов для дайджеста {digest_id}")
             return {"digest_id": str(digest_id), "status": "no_active_channels"}
+        
     # 2. Сбор новостей (парсинг + загрузка всех из БД)
     date_from = datetime.fromisoformat(request_data['date_from'])
     date_to = datetime.fromisoformat(request_data['date_to'])
@@ -142,21 +143,10 @@ async def _generate_digest_async(
     # Сначала парсим и сохраняем новые сообщения (если есть)
     news_items = await _collector.collect_news_for_channels(channels, date_from)
 
-    # Теперь загружаем все сообщения за период из БД
-    # async with async_session_maker() as session:
-    #     stmt = (
-    #         select(News)
-    #         .where(News.channel_id.in_([c.id for c in channels]))
-    #         .where(News.published_at >= date_from)
-    #         .where(News.published_at <= date_to)
-    #     )
-    #     result = await session.execute(stmt)
-    #     news_items = result.scalars().all()
-    logger.info(f"📰 Всего новостей за период: {len(news_items)}")
-
     if not news_items:
         logger.warning(f"⚠️ Новостей не найдено для дайджеста {digest_id}")
         return {"digest_id": str(digest_id), "status": "no_news"}
+
 
     # Дальше идёт существующий код (извлечение id, текстов, эмбеддинги, кластеризация...)
     news_ids = [n.id for n in news_items]
@@ -233,6 +223,17 @@ async def _generate_digest_async(
     logger.info(f"📝 Запуск суммаризации кластеров...")
     await _summarization_service.summarize_clusters(digest_id)
     logger.info(f"✅ Суммаризация завершена")
+    
+    # Устанавливаем заголовок дайджеста как заголовок первого кластера
+    async with async_session_maker() as session:
+        stmt = select(Cluster).where(Cluster.digest_id == digest_id).order_by(Cluster.created_at).limit(1)
+        first_cluster = (await session.execute(stmt)).scalar_one_or_none()
+        if first_cluster and first_cluster.title:
+            digest = await session.get(Digest, digest_id)
+            if digest:
+                digest.title = first_cluster.title
+                await session.commit()
+                logger.info(f"📌 Установлен заголовок дайджеста: {digest.title}")
 
     # 10. Сборка текста дайджеста
     digest_text = await build_digest_text(digest_id)   # только собирает текст из БД
@@ -266,45 +267,60 @@ async def _generate_digest_async(
     if 'chat_id' in request_data:
         try:
             bot = Bot(token=settings.BOT_TOKEN)
-            # Получаем список кластеров для этого дайджеста
-            async with async_session_maker() as session:
-                stmt = select(Cluster).where(Cluster.digest_id == digest_id).order_by(Cluster.created_at)
-                clusters = (await session.execute(stmt)).scalars().all()
-            
-            # Отправляем приветственное сообщение
+            logger.info(f"Начинаю отправку дайджеста {digest_id} в чат {request_data['chat_id']}")
+
+            # Приветственное сообщение
             await bot.send_message(
                 chat_id=request_data['chat_id'],
                 text="📰 *Ваш дайджест готов!*",
                 parse_mode="Markdown"
             )
-            
-            # Отправляем каждый кластер отдельным сообщением
+
+            # Отправка кластеров
+            async with async_session_maker() as session:
+                stmt = select(Cluster).where(Cluster.digest_id == digest_id).order_by(Cluster.created_at)
+                clusters = (await session.execute(stmt)).scalars().all()
             for cluster in clusters:
                 if cluster.title and cluster.summary_text:
                     message_text = f"📌 *{cluster.title}*\n\n{cluster.summary_text}"
-                    # Если текст кластера слишком длинный, обрезаем до 4000 символов (с запасом)
-                    if len(message_text) > 4000:
+                    if len(message_text) > 4096:
                         message_text = message_text[:4000] + "...\n(обрезано)"
                     await bot.send_message(
                         chat_id=request_data['chat_id'],
                         text=message_text,
                         parse_mode="Markdown"
                     )
-                    # Небольшая пауза, чтобы не превысить лимит частоты отправки
                     await asyncio.sleep(0.5)
-            
-            # Если есть аудио, отправляем отдельным файлом
+
+            # Отправка кнопок
+            from app.bot.keyboards.inline import add_to_favorites
+            await bot.send_message(
+                chat_id=request_data['chat_id'],
+                text="✅ Дайджест готов. Вы можете сохранить его или вернуться в меню:",
+                reply_markup=add_to_favorites(digest_id),
+                parse_mode="Markdown"
+            )
+
+            # Отправка аудио (если есть)
             if audio_path:
-                with open(audio_path, 'rb') as audio_file:
+                logger.info(f"Отправляю аудио файл: {audio_path}")
+                try:
+                    audio_file = FSInputFile(audio_path)
                     await bot.send_audio(
                         chat_id=request_data['chat_id'],
                         audio=audio_file,
                         caption="🎧 Аудио-версия дайджеста"
                     )
+                    logger.info("Аудио отправлено")
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке аудио: {e}", exc_info=True)
+
             await bot.session.close()
         except Exception as e:
-            logger.error(f"Не удалось отправить сообщение пользователю: {e}")
-    
+            logger.error(f"Ошибка при отправке сообщения пользователю: {e}", exc_info=True)
+    else:
+        logger.warning(f"Нет chat_id в request_data: {request_data}")
+        
 
 async def build_digest_text(digest_id: uuid.UUID) -> str:
     async with async_session_maker() as session:

@@ -49,6 +49,7 @@ async def add_digest(
     await session.refresh(digest)
 
     request_data = data.model_dump()
+    request_data['cluster_count'] = request_data.pop('n_clusters', data.n_clusters)
     # Гарантируем наличие ключа 'channels'
     if 'channels' not in request_data or request_data['channels'] is None:
         request_data['channels'] = data.channels if data.channels else []
