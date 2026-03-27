@@ -1,8 +1,8 @@
-from app.api.schemas.favorite_digest import SFavoriteDigest
+from app.api.schemas.favorite_digest import SFavoriteDigestData
 
 
-def build_favorite_digest_schema(fav, digest) -> SFavoriteDigest:
-    return SFavoriteDigest(
+def build_favorite_digest_schema(fav, digest) -> SFavoriteDigestData:
+    return SFavoriteDigestData(
         id=fav.id,
         digest_id=fav.digest_id,
         user_id=fav.user_id,
