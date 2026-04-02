@@ -46,8 +46,11 @@ async def telegram_login(
         await session.refresh(user)
 
     access_token = create_access_token(user.id)
-    response.headers.append(
-        "Set-Cookie",
-        f"access_token={access_token}; HttpOnly; Secure; SameSite=None; Partitioned"
+    response.set_cookie(
+        "access_token",           
+        access_token,             
+        httponly=True,        
+        secure=True,              
+        samesite="none"
     )
     return {"status": "ok"}

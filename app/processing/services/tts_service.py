@@ -32,6 +32,6 @@ class TTSService:
         async with async_session_maker() as session:
             digest = await session.get(Digest, digest_id)
             if digest:
-                digest.audio_path = filepath
+                digest.audio_path = filename
                 await session.commit()
         return filepath

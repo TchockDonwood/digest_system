@@ -242,7 +242,7 @@ async def _generate_digest_async(
 
     # 11. Генерация аудио
     audio_path = None
-    if 'audio' in request_data.get('formats', []) and digest_text:
+    if 'audio' in request_data.get('output_format', []) and digest_text:
         logger.info(f"🔊 Генерация аудио для дайджеста {digest_id}, текст: {len(digest_text)} символов")
         try:
             audio_path = await _tts_service.generate_audio(digest_id, digest_text)
@@ -255,8 +255,8 @@ async def _generate_digest_async(
             audio_path = None
 
     # 12. Списание токенов
-    token_cost = 5 if 'audio' in request_data.get('formats', []) else 1
-    await deduct_tokens(user_id, token_cost, f"Дайджест {digest_id} (формат {request_data.get('formats')})")
+    token_cost = 5 if 'audio' in request_data.get('output_format', []) else 1
+    await deduct_tokens(user_id, token_cost, f"Дайджест {digest_id} (формат {request_data.get('output_format')})")
     logger.info(f"💰 Списано {token_cost} токенов у пользователя {user_id}")
 
     # 13. Сохранение в историю

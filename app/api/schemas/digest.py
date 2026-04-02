@@ -25,4 +25,4 @@ class SDigestCreate(BaseModel):
     date_to: date
     filter_query: Optional[str] = None
     n_clusters: int
-    output_format: Literal["text", "audio"] = "text"
+    output_format: List[Literal["text", "audio"]] = ["text"]

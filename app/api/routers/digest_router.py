@@ -2,6 +2,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from pathlib import Path
 
 from app.api.schemas.cluster import SCluster
 from app.api.schemas.digest import SDigest, SDigestCreate
@@ -104,7 +105,11 @@ async def get_digest_audio(
         raise AudioNotExistsException()
     
     # Полный относительный путь до аудиофайла
-    audio_file_path = settings.audio_path / digest.audio_path 
+    audio_file_path = settings.AUDIO_STORAGE_DIR / digest.audio_path
+    print(f"AUDIO_STORAGE_PATH = {settings.AUDIO_STORAGE_PATH}")
+    print(f"digest.audio_path = {digest.audio_path}")
+    audio_file_path = Path(settings.AUDIO_STORAGE_PATH) / digest.audio_path
+    print(f"audio_file_path = {audio_file_path}")
     
     if not audio_file_path.exists():
         raise AudioNotExistsException()

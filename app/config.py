@@ -1,4 +1,6 @@
 from pydantic_settings import BaseSettings
+from pathlib import Path
+
 
 class Settings(BaseSettings):
     # Существующие поля
@@ -24,6 +26,10 @@ class Settings(BaseSettings):
     SAIGA_MODEL: str
 
     AUDIO_STORAGE_PATH: str
+
+    @property
+    def AUDIO_STORAGE_DIR(self) -> Path:
+        return Path(self.AUDIO_STORAGE_PATH)
 
     @property
     def WIDGET_BOT_TOKEN_ACTUAL(self) -> str:
